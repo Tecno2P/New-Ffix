@@ -38,13 +38,7 @@ struct NfcGpioConfig {
     uint8_t  rx    = 16;
 };
 
-static const char* MIFARE_DICT_KEYS[] = {
-    "FFFFFFFFFFFF", "000000000000", "A0A1A2A3A4A5",
-    "B0B1B2B3B4B5", "D3F7D3F7D3F7", "AABBCCDDEEFF",
-    "1234567890AB", "000102030405", "FFFFFFFFFFFE",
-    "4B0B20107CCB", "6A1987C40A21", "AACCDDEE0011"
-};
-static const uint8_t MIFARE_DICT_LEN = 12;
+
 
 class NfcModule {
 public:

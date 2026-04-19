@@ -283,7 +283,7 @@ String AuditManager::_buildTimeStr() const {
         struct tm tmbuf;
         time_t t = (time_t)ts;
         localtime_r(&t, &tmbuf);
-        char buf[24];
+        char buf[32];
         snprintf(buf, sizeof(buf), "%04d-%02d-%02d %02d:%02d:%02d",
                  tmbuf.tm_year + 1900, tmbuf.tm_mon + 1, tmbuf.tm_mday,
                  tmbuf.tm_hour, tmbuf.tm_min, tmbuf.tm_sec);

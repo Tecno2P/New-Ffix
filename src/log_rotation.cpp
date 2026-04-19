@@ -183,7 +183,7 @@ String LogRotationManager::_todayStr() const {
     time_t now; time(&now);
     if (now > 1000000000UL) {
         struct tm t; localtime_r(&now, &t);
-        char buf[11];
+        char buf[16];
         snprintf(buf, sizeof(buf), "%04d-%02d-%02d",
                  t.tm_year+1900, t.tm_mon+1, t.tm_mday);
         return String(buf);
