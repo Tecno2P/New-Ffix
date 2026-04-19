@@ -1,0 +1,160 @@
+name: Build IR Remote Firmware v4.0.0
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Compile Firmware + LittleFS
+    runs-on: ubuntu-latest
+
+    steps:
+
+      # ── 1. Checkout ─────────────────────────────────────────
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # ── 2. Python ───────────────────────────────────────────
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      # ── 3. PlatformIO (pinned version) ──────────────────────
+      - name: Install PlatformIO
+        run: |
+          python -m pip install --upgrade pip
+          pip install platformio==6.1.16
+
+      # ── 4. Cache PlatformIO + toolchain ─────────────────────
+      # Key includes platformio.ini hash — dep changes bust cache.
+      # ~/.platformio/packages holds ESP32 toolchain (~400 MB).
+      - name: Cache PlatformIO
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.platformio
+            ~/.cache/pip
+          key: ${{ runner.os }}-pio-${{ hashFiles('platformio.ini') }}-v3
+          restore-keys: |
+            ${{ runner.os }}-pio-
+
+      # ── 5. Build firmware ────────────────────────────────────
+      - name: Build firmware
+        run: pio run -e esp32dev
+        env:
+          PLATFORMIO_CI: 1
+          PLATFORMIO_NO_ANSI: 1
+
+      # ── 6. Build LittleFS image ──────────────────────────────
+      - name: Build LittleFS filesystem image
+        run: pio run -e esp32dev --target buildfs
+        env:
+          PLATFORMIO_CI: 1
+          PLATFORMIO_NO_ANSI: 1
+
+      # ── 7. Print binary sizes ────────────────────────────────
+      - name: Print binary sizes
+        run: |
+          echo "=== Binary sizes ==="
+          ls -lh .pio/build/esp32dev/*.bin
+          echo ""
+          echo "=== Firmware size vs partition ==="
+          FW=$(stat -c%s .pio/build/esp32dev/firmware.bin)
+          PART=$((1792 * 1024))
+          PCT=$(( FW * 100 / PART ))
+          echo "firmware.bin: $(numfmt --to=iec $FW) / 1792 KB (${PCT}%)"
+          FS=$(stat -c%s .pio/build/esp32dev/littlefs.bin)
+          echo "littlefs.bin: $(numfmt --to=iec $FS) / 1792 KB"
+
+      # ── 8. Collect binaries ──────────────────────────────────
+      - name: Collect binaries
+        run: |
+          mkdir -p release_bins
+          cp .pio/build/esp32dev/firmware.bin    release_bins/
+          cp .pio/build/esp32dev/bootloader.bin  release_bins/
+          cp .pio/build/esp32dev/partitions.bin  release_bins/
+          cp .pio/build/esp32dev/littlefs.bin    release_bins/
+
+      # ── 9. Upload artifacts ──────────────────────────────────
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: IR-Remote-v4.0.0-Build-${{ github.run_number }}
+          path: release_bins/
+          retention-days: 90
+
+      # ── 10. Create GitHub Release (main/master push only) ───
+      - name: Create GitHub Release
+        if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v4.0.0-build-${{ github.run_number }}
+          name: "IR Remote Web GUI v4.0.0 — Build #${{ github.run_number }}"
+          body: |
+            ## IR Remote Web GUI v4.0.0
+            **Target:** ESP32-WROOM-32 (4 MB Flash)
+            **Framework:** Arduino (espressif32 @ 6.6.0)
+
+            ### What's New in v4.0.0
+            - **124 IR protocols** — full IRremoteESP8266 v2.8.6 support (DAIKIN, MITSUBISHI_AC, HAIER, GREE, SAMSUNG_AC, FUJITSU_AC, and 118 more)
+            - **Button icon + color** — per-button emoji icon and hex color in Web GUI
+            - **Scheduler repeat** — per-schedule repeat count and delay
+            - **Internal macros** — multi-step IR macros stored in LittleFS (no SD required)
+            - **SD card** — file manager, macros, IR library, OTA, backup/restore, logging
+            - **Mobile-optimized SD tab** — card-based file browser works on phone + PC
+
+            ---
+
+            ### First Install (USB — one time only)
+
+            **Linux / macOS:**
+            ```bash
+            pip install esptool
+            esptool.py --chip esp32 --port /dev/ttyUSB0 --baud 921600 \
+              write_flash \
+              0x1000   bootloader.bin \
+              0x8000   partitions.bin \
+              0x10000  firmware.bin \
+              0x390000 littlefs.bin
+            ```
+
+            **Windows:**
+            ```cmd
+            pip install esptool
+            esptool.py --chip esp32 --port COM3 --baud 921600 ^
+              write_flash ^
+              0x1000   bootloader.bin ^
+              0x8000   partitions.bin ^
+              0x10000  firmware.bin ^
+              0x390000 littlefs.bin
+            ```
+
+            > ⚠️ `littlefs.bin` **must** flash to `0x390000` — wrong address = blank web page.
+
+            ---
+
+            ### After Flashing
+            | | |
+            |---|---|
+            | **WiFi AP** | `IR-Remote` / `irremote123` |
+            | **Browser** | http://192.168.4.1 |
+
+            ### OTA Updates (no USB needed after first flash)
+            Web GUI → Settings → OTA Update
+            - `firmware.bin` → Firmware
+            - `littlefs.bin` → Web GUI
+
+          files: |
+            release_bins/firmware.bin
+            release_bins/bootloader.bin
+            release_bins/partitions.bin
+            release_bins/littlefs.bin
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
