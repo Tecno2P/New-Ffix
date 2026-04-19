@@ -440,10 +440,14 @@ void WebUI::setupModuleRoutes() {
     POST_BODY_MOD("/api/system/led", [](AsyncWebServerRequest* req, uint8_t* d, size_t l) {
         JsonDocument doc; deserializeJson(doc, d, l);
         LedConfig cfg;
-        cfg.type    = (LedType)(doc["type"] | 0);
-        cfg.mode    = (LedMode)(doc["mode"] | 0);
-        cfg.dataPin = doc["dataPin"] | 13;
-        cfg.clkPin  = doc["clkPin"]  | 14;
+        cfg.type       = (LedType)(doc["type"]       | 0);
+        cfg.mode       = (LedMode)(doc["mode"]       | 0);
+        cfg.dataPin    = doc["dataPin"]    | (uint8_t)2;
+        cfg.numLeds    = doc["numLeds"]    | (uint8_t)8;
+        cfg.r          = doc["r"]          | (uint8_t)255;
+        cfg.g          = doc["g"]          | (uint8_t)0;
+        cfg.b          = doc["b"]          | (uint8_t)128;
+        cfg.brightness = doc["brightness"] | (uint8_t)128;
         sysModule.setLedMode(cfg);
         _sendJson(req, 200, "{\"ok\":true}");
     });
@@ -640,7 +644,8 @@ void WebUI::setupModuleRoutes() {
         cfg.ss    = doc["ss"]    | (uint8_t)15;
         cfg.irq   = doc["irq"]   | (uint8_t)16;
         cfg.reset = doc["reset"] | (uint8_t)17;
-        nfcModule.reinit(cfg);
+        nfcModule.saveGpioConfig(cfg);
+        nfcModule.reinit();
         _sendJson(req, 200, "{\"ok\":true}");
     });
 

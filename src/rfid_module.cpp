@@ -235,11 +235,6 @@ bool RfidModule::writeCard(const String& uid) {
         }
     };
 
-    // Helper: send a byte (MSB first)
-    auto sendByte = [&](uint8_t b) {
-        for (int i = 7; i >= 0; i--) sendBit((b >> i) & 1);
-    };
-
     // Helper: send a 32-bit word (MSB first)
     auto sendWord = [&](uint32_t w) {
         for (int i = 31; i >= 0; i--) sendBit((w >> i) & 1);

@@ -170,7 +170,7 @@ void OtaManager::abortUpdate(const String& reason) {
 void OtaManager::tickWatchdog() {
     if (!_updating) return;
     if ((millis() - _lastChunkMs) >= OTA_CHUNK_TIMEOUT_MS) {
-        Serial.printf(DEBUG_TAG " OTA: watchdog timeout — no data for %us, aborting.\n",
+        Serial.printf(DEBUG_TAG " OTA: watchdog timeout — no data for %lus, aborting.\n",
                       OTA_CHUNK_TIMEOUT_MS / 1000U);
         abortUpdate("Upload timed out — connection dropped during transfer");
     }
