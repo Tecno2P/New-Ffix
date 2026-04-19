@@ -171,23 +171,6 @@ void WebUI::setupModuleRoutes() {
                   (nfcModule.isDictRunning() ? "true" : "false") + "}");
     });
 
-    // POST /api/nfc/gpio  body: gpio config JSON
-    POST_BODY_MOD("/api/nfc/gpio", [](AsyncWebServerRequest* req, uint8_t* d, size_t l) {
-        JsonDocument doc;
-        if (deserializeJson(doc, d, l) != DeserializationError::Ok) {
-            _sendJson(req, 400, "{\"error\":\"JSON\"}"); return;
-        }
-        NfcGpioConfig cfg;
-        cfg.iface = (NfcIface)(doc["iface"] | 0);
-        cfg.sda   = doc["sda"]   | (uint8_t)21;
-        cfg.scl   = doc["scl"]   | (uint8_t)22;
-        cfg.irq   = doc["irq"]   | (uint8_t)16;
-        cfg.reset = doc["reset"] | (uint8_t)17;
-        cfg.ss    = doc["ss"]    | (uint8_t)15;
-        nfcModule.reinit(cfg);
-        _sendJson(req, 200, "{\"ok\":true}");
-    });
-
     // GET /api/nfc/export?id=N  — download .nfc content
     _server.on("/api/nfc/export", HTTP_GET, [](AsyncWebServerRequest* req) {
         if (!req->hasParam("id")) { _sendJson(req, 400, "{\"error\":\"Missing id\"}"); return; }
@@ -290,18 +273,6 @@ void WebUI::setupModuleRoutes() {
             _sendJson(req, 200, "{\"ok\":true}");
         });
 
-    POST_BODY_MOD("/api/rfid/gpio", [](AsyncWebServerRequest* req, uint8_t* d, size_t l) {
-        JsonDocument doc;
-        if (deserializeJson(doc, d, l) != DeserializationError::Ok) {
-            _sendJson(req, 400, "{\"error\":\"JSON\"}"); return;
-        }
-        RfidGpioConfig cfg;
-        cfg.dataPin  = doc["dataPin"]  | (uint8_t)14;
-        cfg.clkPin   = doc["clkPin"]   | (uint8_t)13;
-        cfg.powerPin = doc["powerPin"] | (uint8_t)12;
-        rfidModule.reinit(cfg);
-        _sendJson(req, 200, "{\"ok\":true}");
-    });
 
     // ── Sub-GHz ─────────────────────────────────────────────
     _server.on("/api/subghz/signals", HTTP_GET, [](AsyncWebServerRequest* req) {
@@ -372,35 +343,6 @@ void WebUI::setupModuleRoutes() {
         _sendJson(req, 200, ok ? "{\"ok\":true}" : "{\"error\":\"Not found\"}");
     });
 
-    POST_BODY_MOD("/api/subghz/gpio", [](AsyncWebServerRequest* req, uint8_t* d, size_t l) {
-        JsonDocument doc; deserializeJson(doc, d, l);
-        SubGhzGpioConfig cfg;
-        cfg.gdo0   = doc["gdo0"]   | 34;
-        cfg.gdo2   = doc["gdo2"]   | 35;
-        cfg.cs     = doc["cs"]     | 5;
-        cfg.sck    = doc["sck"]    | 18;
-        cfg.mosi   = doc["mosi"]   | 23;
-        cfg.miso   = doc["miso"]   | 19;
-        cfg.spiBus = doc["spiBus"] | 0;
-        subGhzModule.saveGpioConfig(cfg);
-        _sendJson(req, 200, "{\"ok\":true}");
-    });
-
-    // ── NRF24 ───────────────────────────────────────────────
-    POST_BODY_MOD("/api/nrf24/gpio", [](AsyncWebServerRequest* req, uint8_t* d, size_t l) {
-        JsonDocument doc; deserializeJson(doc, d, l);
-        Nrf24GpioConfig cfg;
-        cfg.moduleType = (Nrf24Module_t)(doc["moduleType"] | 0);
-        cfg.ce    = doc["ce"]    | 4;
-        cfg.csn   = doc["csn"]   | 5;
-        cfg.sck   = doc["sck"]   | 18;
-        cfg.mosi  = doc["mosi"]  | 23;
-        cfg.miso  = doc["miso"]  | 19;
-        cfg.irq   = doc["irq"]   | 0;
-        cfg.spiBus= doc["spiBus"]| 0;
-        nrf24Module.saveGpioConfig(cfg);
-        _sendJson(req, 200, "{\"ok\":true}");
-    });
 
     POST_BODY_MOD("/api/nrf24/rc", [](AsyncWebServerRequest* req, uint8_t* d, size_t l) {
         JsonDocument doc; deserializeJson(doc, d, l);
@@ -494,15 +436,6 @@ void WebUI::setupModuleRoutes() {
         _sendJson(req, 200, String(buf));
     });
 
-    POST_BODY_MOD("/api/gps/gpio", [](AsyncWebServerRequest* req, uint8_t* d, size_t l) {
-        JsonDocument doc; deserializeJson(doc, d, l);
-        GpsGpioConfig cfg;
-        cfg.txPin = doc["txPin"] | 17;
-        cfg.rxPin = doc["rxPin"] | 16;
-        cfg.baud  = doc["baud"]  | 9600u;
-        sysModule.saveGpsGpio(cfg);
-        _sendJson(req, 200, "{\"ok\":true}");
-    });
 
     POST_BODY_MOD("/api/system/led", [](AsyncWebServerRequest* req, uint8_t* d, size_t l) {
         JsonDocument doc; deserializeJson(doc, d, l);
@@ -572,9 +505,8 @@ void WebUI::setupModuleRoutes() {
         LittleFS.format();
         ESP.restart();
     });
-
     // ═══════════════════════════════════════════════════════════
-    // Module Status + GPIO endpoints (real hardware)
+    // Module Status + GPIO endpoints
     // ═══════════════════════════════════════════════════════════
 
     // ── NRF24 ────────────────────────────────────────────────
@@ -588,16 +520,16 @@ void WebUI::setupModuleRoutes() {
         doc["ce"]  = c.ce;  doc["csn"]  = c.csn;
         doc["sck"] = c.sck; doc["mosi"] = c.mosi;
         doc["miso"]= c.miso;doc["irq"]  = c.irq;
-        doc["spiBus"]  = c.spiBus;
-        doc["dataRate"]= (int)c.dataRate;
-        doc["paLevel"] = (int)c.paLevel;
+        doc["spiBus"]   = c.spiBus;
+        doc["dataRate"] = (int)c.dataRate;
+        doc["paLevel"]  = (int)c.paLevel;
         String out; serializeJson(doc, out);
         _sendJson(req, 200, out);
     });
     POST_BODY_MOD("/api/nrf24/gpio", [](AsyncWebServerRequest* req, uint8_t* d, size_t l) {
         JsonDocument doc;
         if (deserializeJson(doc, d, l) != DeserializationError::Ok) {
-            _sendJson(req, 400, "{"error":"JSON"}"); return;
+            _sendJson(req, 400, "{\"error\":\"JSON\"}"); return;
         }
         Nrf24GpioConfig cfg;
         cfg.moduleType = (Nrf24Module_t)(doc["moduleType"] | 0);
@@ -611,18 +543,18 @@ void WebUI::setupModuleRoutes() {
         cfg.dataRate = (Nrf24DataRate)(doc["dataRate"] | 1);
         cfg.paLevel  = (Nrf24PaLevel)(doc["paLevel"]   | 2);
         nrf24Module.reinit(cfg);
-        _sendJson(req, 200, "{"ok":true}");
+        _sendJson(req, 200, "{\"ok\":true}");
     });
     POST_BODY_MOD("/api/nrf24/config", [](AsyncWebServerRequest* req, uint8_t* d, size_t l) {
         JsonDocument doc;
         if (deserializeJson(doc, d, l) != DeserializationError::Ok) {
-            _sendJson(req, 400, "{"error":"JSON"}"); return;
+            _sendJson(req, 400, "{\"error\":\"JSON\"}"); return;
         }
         if (doc["channel"].is<uint8_t>())
             nrf24Module.setChannel(doc["channel"].as<uint8_t>());
         if (doc["dataRate"].is<int>())
             nrf24Module.setDataRate((Nrf24DataRate)doc["dataRate"].as<int>());
-        _sendJson(req, 200, "{"ok":true}");
+        _sendJson(req, 200, "{\"ok\":true}");
     });
 
     // ── SubGHz ───────────────────────────────────────────────
@@ -642,7 +574,7 @@ void WebUI::setupModuleRoutes() {
     POST_BODY_MOD("/api/subghz/gpio", [](AsyncWebServerRequest* req, uint8_t* d, size_t l) {
         JsonDocument doc;
         if (deserializeJson(doc, d, l) != DeserializationError::Ok) {
-            _sendJson(req, 400, "{"error":"JSON"}"); return;
+            _sendJson(req, 400, "{\"error\":\"JSON\"}"); return;
         }
         SubGhzGpioConfig cfg;
         cfg.gdo0   = doc["gdo0"]   | (uint8_t)34;
@@ -653,7 +585,7 @@ void WebUI::setupModuleRoutes() {
         cfg.miso   = doc["miso"]   | (uint8_t)19;
         cfg.spiBus = doc["spiBus"] | (uint8_t)0;
         subGhzModule.reinit(cfg);
-        _sendJson(req, 200, "{"ok":true}");
+        _sendJson(req, 200, "{\"ok\":true}");
     });
 
     // ── RFID ─────────────────────────────────────────────────
@@ -672,14 +604,14 @@ void WebUI::setupModuleRoutes() {
     POST_BODY_MOD("/api/rfid/gpio", [](AsyncWebServerRequest* req, uint8_t* d, size_t l) {
         JsonDocument doc;
         if (deserializeJson(doc, d, l) != DeserializationError::Ok) {
-            _sendJson(req, 400, "{"error":"JSON"}"); return;
+            _sendJson(req, 400, "{\"error\":\"JSON\"}"); return;
         }
         RfidGpioConfig cfg;
         cfg.dataPin  = doc["dataPin"]  | (uint8_t)14;
         cfg.clkPin   = doc["clkPin"]   | (uint8_t)13;
         cfg.powerPin = doc["powerPin"] | (uint8_t)12;
         rfidModule.reinit(cfg);
-        _sendJson(req, 200, "{"ok":true}");
+        _sendJson(req, 200, "{\"ok\":true}");
     });
 
     // ── NFC ──────────────────────────────────────────────────
@@ -699,7 +631,7 @@ void WebUI::setupModuleRoutes() {
     POST_BODY_MOD("/api/nfc/gpio", [](AsyncWebServerRequest* req, uint8_t* d, size_t l) {
         JsonDocument doc;
         if (deserializeJson(doc, d, l) != DeserializationError::Ok) {
-            _sendJson(req, 400, "{"error":"JSON"}"); return;
+            _sendJson(req, 400, "{\"error\":\"JSON\"}"); return;
         }
         NfcGpioConfig cfg;
         cfg.iface = (NfcIface)(doc["iface"] | 0);
@@ -709,7 +641,7 @@ void WebUI::setupModuleRoutes() {
         cfg.irq   = doc["irq"]   | (uint8_t)16;
         cfg.reset = doc["reset"] | (uint8_t)17;
         nfcModule.reinit(cfg);
-        _sendJson(req, 200, "{"ok":true}");
+        _sendJson(req, 200, "{\"ok\":true}");
     });
 
     // ── GPS ──────────────────────────────────────────────────
@@ -726,7 +658,7 @@ void WebUI::setupModuleRoutes() {
     POST_BODY_MOD("/api/gps/gpio", [](AsyncWebServerRequest* req, uint8_t* d, size_t l) {
         JsonDocument doc;
         if (deserializeJson(doc, d, l) != DeserializationError::Ok) {
-            _sendJson(req, 400, "{"error":"JSON"}"); return;
+            _sendJson(req, 400, "{\"error\":\"JSON\"}"); return;
         }
         GpsGpioConfig cfg;
         cfg.rxPin   = doc["rxPin"]   | (uint8_t)16;
@@ -734,7 +666,7 @@ void WebUI::setupModuleRoutes() {
         cfg.baud    = doc["baud"]    | (uint32_t)9600;
         cfg.uartNum = doc["uartNum"] | (uint8_t)1;
         sysModule.reinitGps(cfg);
-        _sendJson(req, 200, "{"ok":true}");
+        _sendJson(req, 200, "{\"ok\":true}");
     });
 
     // ── LED ──────────────────────────────────────────────────
@@ -755,7 +687,7 @@ void WebUI::setupModuleRoutes() {
     POST_BODY_MOD("/api/led/gpio", [](AsyncWebServerRequest* req, uint8_t* d, size_t l) {
         JsonDocument doc;
         if (deserializeJson(doc, d, l) != DeserializationError::Ok) {
-            _sendJson(req, 400, "{"error":"JSON"}"); return;
+            _sendJson(req, 400, "{\"error\":\"JSON\"}"); return;
         }
         LedConfig cfg;
         cfg.type       = (LedType)(doc["type"]       | 0);
@@ -767,15 +699,15 @@ void WebUI::setupModuleRoutes() {
         cfg.b          = doc["b"]          | (uint8_t)128;
         cfg.brightness = doc["brightness"] | (uint8_t)128;
         sysModule.setLedMode(cfg);
-        _sendJson(req, 200, "{"ok":true}");
+        _sendJson(req, 200, "{\"ok\":true}");
     });
 
     // ── Hardware summary ─────────────────────────────────────
     _server.on("/api/system/hardware", HTTP_GET, [](AsyncWebServerRequest* req) {
         char buf[200];
         snprintf(buf, sizeof(buf),
-                 "{"nrf24":%s,"subghz":%s,"rfid":%s,"
-                 ""nfc":%s,"gps":%s,"led":%s}",
+                 "{\"nrf24\":%s,\"subghz\":%s,\"rfid\":%s,"
+                 "\"nfc\":%s,\"gps\":%s,\"led\":%s}",
                  nrf24Module.isConnected()  ? "true":"false",
                  subGhzModule.isConnected() ? "true":"false",
                  rfidModule.isConnected()   ? "true":"false",

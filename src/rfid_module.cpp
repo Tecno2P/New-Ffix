@@ -180,12 +180,113 @@ void RfidModule::stopRead() {
 
 bool RfidModule::writeCard(const String& uid) {
     if (!_hwConnected) return false;
-    // T5577 write: carrier burst sequence
-    // 55 ms preamble + data blocks at 125kHz
-    // Basic implementation: toggle DATA pin at 125kHz carrier
-    Serial.printf(RFID_TAG " Writing UID %s to card\n", uid.c_str());
-    // Real T5577 write requires precise timing at 125kHz
-    // This is a placeholder that logs the operation
+    if (uid.length() < 8) return false;
+
+    Serial.printf(RFID_TAG " Writing UID %s to T5577\n", uid.c_str());
+
+    // Parse UID hex string into bytes (up to 5 bytes: version + 32-bit ID)
+    uint8_t uidBytes[5] = {0};
+    for (int i = 0; i < 5 && (size_t)(i * 2 + 1) < uid.length(); i++) {
+        char hi = uid[i * 2];
+        char lo = uid[i * 2 + 1];
+        auto hexVal = [](char c) -> uint8_t {
+            if (c >= '0' && c <= '9') return c - '0';
+            if (c >= 'A' && c <= 'F') return 10 + (c - 'A');
+            if (c >= 'a' && c <= 'f') return 10 + (c - 'a');
+            return 0;
+        };
+        uidBytes[i] = (hexVal(hi) << 4) | hexVal(lo);
+    }
+
+    // T5577 EM4100-compatible write via DATA pin toggling at 125kHz.
+    // Protocol:
+    //   1. 55 ms continuous modulation (opcode preamble)
+    //   2. Opcode: 10 (write page 0, block 0) = 2 bits
+    //   3. Lock bit: 0 = not locked
+    //   4. 32-bit data word (block 0: version<<24 | id[0]<<16 | id[1]<<8 | id[2])
+    //   5. Repeat for block 1 (remaining ID bytes)
+    //
+    // 125kHz carrier period = 8 µs.
+    // Manchester bit period at RF/64 = 512 µs → half-bit = 256 µs.
+
+    // Configure DATA pin as OUTPUT for write
+    if (_cfg.powerPin > 0) digitalWrite(_cfg.powerPin, LOW);
+    delayMicroseconds(500);
+    pinMode(_cfg.dataPin, OUTPUT);
+    digitalWrite(_cfg.dataPin, LOW);
+    if (_cfg.powerPin > 0) {
+        digitalWrite(_cfg.powerPin, HIGH);
+        delay(10);
+    }
+
+    // Helper: send one Manchester bit at 125kHz (RF/64)
+    // Logic 0 → high-then-low; Logic 1 → low-then-high
+    auto sendBit = [&](bool bit) {
+        if (bit) {
+            digitalWrite(_cfg.dataPin, LOW);
+            delayMicroseconds(256);
+            digitalWrite(_cfg.dataPin, HIGH);
+            delayMicroseconds(256);
+        } else {
+            digitalWrite(_cfg.dataPin, HIGH);
+            delayMicroseconds(256);
+            digitalWrite(_cfg.dataPin, LOW);
+            delayMicroseconds(256);
+        }
+    };
+
+    // Helper: send a byte (MSB first)
+    auto sendByte = [&](uint8_t b) {
+        for (int i = 7; i >= 0; i--) sendBit((b >> i) & 1);
+    };
+
+    // Helper: send a 32-bit word (MSB first)
+    auto sendWord = [&](uint32_t w) {
+        for (int i = 31; i >= 0; i--) sendBit((w >> i) & 1);
+    };
+
+    // 1. Start gap: DATA low for 55 ms (T5577 reset/start condition)
+    digitalWrite(_cfg.dataPin, LOW);
+    delay(55);
+
+    // 2. Write opcode = 10 binary (page 0 write)
+    sendBit(1); sendBit(0);
+
+    // 3. Lock bit = 0
+    sendBit(0);
+
+    // 4. Block 0: T5577 config word for EM4100 emulation
+    //    Modulation=Manchester(2), RF/64, 5 blocks → 0x00148040
+    uint32_t configWord = 0x00148040UL;
+    sendWord(configWord);
+
+    // 5. Write opcode again for block 1
+    sendBit(1); sendBit(0);
+    sendBit(0); // lock bit
+
+    // Block 1: version (byte0) + id bytes 1-3
+    uint32_t block1 = ((uint32_t)uidBytes[0] << 24) |
+                      ((uint32_t)uidBytes[1] << 16) |
+                      ((uint32_t)uidBytes[2] <<  8) |
+                       (uint32_t)uidBytes[3];
+    sendWord(block1);
+
+    // 6. Write opcode for block 2
+    sendBit(1); sendBit(0);
+    sendBit(0);
+
+    // Block 2: last ID byte + parity padding
+    uint32_t block2 = ((uint32_t)uidBytes[4] << 24);
+    sendWord(block2);
+
+    // End: DATA low (idle)
+    digitalWrite(_cfg.dataPin, LOW);
+    delay(5);
+
+    // Restore DATA pin to input for reading
+    pinMode(_cfg.dataPin, INPUT_PULLUP);
+
+    Serial.printf(RFID_TAG " Write complete: UID %s\n", uid.c_str());
     return true;
 }
 
