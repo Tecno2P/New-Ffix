@@ -545,8 +545,7 @@ bool NetMonitor::blockDevice(const String& mac, bool block) {
                     for (int i = 0; i < staList.num; i++) {
                         if (memcmp(staList.sta[i].mac, macBytes, 6) == 0) {
                             esp_wifi_deauth_sta(i);
-                            Serial.printf("[NETMON] Deauthed station %s
-", mac.c_str());
+                            Serial.printf("[NETMON] Deauthed station %s\n", mac.c_str());
                             break;
                         }
                     }
